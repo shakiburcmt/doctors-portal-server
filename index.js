@@ -37,6 +37,7 @@ async function run() {
         const appointmentOptionCollection = client.db('doctorsPortal').collection('appointmentOptions');
         const bookingsCollection = client.db('doctorsPortal').collection('bookings');
         const usersCollection = client.db('doctorsPortal').collection('users');
+        const doctorsCollection = client.db('doctorsPortal').collection('doctors');
 
         // use Aggregate to query multiple collection and then merge data
         app.get('/appointmentOptions', async (req, res) => {
@@ -99,6 +100,13 @@ async function run() {
                 }
             ]).toArray();
             res.send(options);
+        })
+
+        // limited data from api
+        app.get('/appointmentSpecialty', async (req, res) => {
+            const query = {};
+            const result = await appointmentOptionCollection.find(query).project({ name: 1 }).toArray();
+            res.send(result);
         })
 
         // logged in email find
@@ -186,6 +194,26 @@ async function run() {
         app.post('/users', async (req, res) => {
             const user = req.body;
             const result = await usersCollection.insertOne(user);
+            res.send(result);
+        })
+
+        app.get('/doctors', async (req, res) => {
+            const query = {};
+            const doctors = await doctorsCollection.find(query).toArray();
+            res.send(doctors);
+        })
+
+        // doctors api
+        app.post('/doctors', async (req, res) => {
+            const doctor = req.body;
+            const result = await doctorsCollection.insertOne(doctor);
+            res.send(result);
+        })
+
+        app.delete('/doctors:id', async (req, res) => {
+            const id = req.params.id;
+            const filter = { _id: ObjectId(id) };
+            const result = await doctorsCollection.deleteOne(filter);
             res.send(result);
         })
     }
