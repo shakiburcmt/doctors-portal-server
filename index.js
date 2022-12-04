@@ -2,6 +2,8 @@ const express = require('express');
 const cors = require('cors');
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const jwt = require('jsonwebtoken');
+const nodemailer = require("nodemailer");
+const mg = require('nodemailer-mailgun-transport');
 require('dotenv').config();
 const port = process.env.PORT || 5000;
 
@@ -14,6 +16,49 @@ app.use(express.json());
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASSWORD}@cluster0.i7ulodc.mongodb.net/?retryWrites=true&w=majority`;
 const client = new MongoClient(uri, { useNewUrlParser: true, useUnifiedTopology: true, serverApi: ServerApiVersion.v1 });
+
+function sendBookingEmail(booking) {
+    const { email, treatment, appointmentDate, slot } = booking;
+    // trying to send email with sendgrid but error
+    // let transporter = nodemailer.createTransport({
+    //     host: 'smtp.sendgrid.net',
+    //     port: 587,
+    //     auth: {
+    //         user: "developer",
+    //         pass: process.env.SENDGRID_API_KEY
+    //     }
+    // });
+
+    // now trying with mialgun
+    const auth = {
+        auth: {
+            api_key: process.env.EMAIL_SEND_KEY,
+            domain: process.env.EMAIL_SEND_DOMAIN
+        }
+    }
+    const transporter = nodemailer.createTransport(mg(auth));
+    transporter.sendMail({
+        from: "shakibur.cmt@gmail.com", // verified sender email
+        to: email || "shakibur.cmt@gmail.com", // recipient email
+        subject: `Your appointment for ${treatment} is confirmed`, // Subject line
+        text: "Done", // plain text body
+        html: `
+        <h3>Your appointment is confirmed</h3>
+        <div>
+            <p>Your appointment for treatment: ${appointment}</p>
+            <p>Please visit us on: ${appointmentDate} at ${slot}</p>
+            <p>Thanks from Doctors Portal</p>
+        </div>
+
+        `, // html body
+    }, function (error, info) {
+        if (error) {
+            console.log(error);
+        } else {
+            console.log('Email sent: ' + info.response);
+        }
+    });
+}
 
 // jwt function
 function verifyJWT(req, res, next) {
@@ -38,6 +83,12 @@ async function run() {
         const bookingsCollection = client.db('doctorsPortal').collection('bookings');
         const usersCollection = client.db('doctorsPortal').collection('users');
         const doctorsCollection = client.db('doctorsPortal').collection('doctors');
+
+        // NOTE: make sure you use verifyAdmin after verifyJWT
+        const verifyAdmin = (req, res, next) => {
+            console.log('inside verify', req.decoded.email);
+            next();
+        }
 
         // use Aggregate to query multiple collection and then merge data
         app.get('/appointmentOptions', async (req, res) => {
@@ -136,6 +187,9 @@ async function run() {
                 return res.send({ acknowledged: false, message })
             }
             const result = await bookingsCollection.insertOne(booking);
+            //send email about appointment confirmation
+            sendBookingEmail(booking);
+
             res.send(result);
         })
 
@@ -197,20 +251,20 @@ async function run() {
             res.send(result);
         })
 
-        app.get('/doctors', async (req, res) => {
+        app.get('/doctors', verifyJWT, verifyAdmin, async (req, res) => {
             const query = {};
             const doctors = await doctorsCollection.find(query).toArray();
             res.send(doctors);
         })
 
         // doctors api
-        app.post('/doctors', async (req, res) => {
+        app.post('/doctors', verifyJWT, async (req, res) => {
             const doctor = req.body;
             const result = await doctorsCollection.insertOne(doctor);
             res.send(result);
         })
 
-        app.delete('/doctors:id', async (req, res) => {
+        app.delete('/doctors/:id', verifyJWT, async (req, res) => {
             const id = req.params.id;
             const filter = { _id: ObjectId(id) };
             const result = await doctorsCollection.deleteOne(filter);
